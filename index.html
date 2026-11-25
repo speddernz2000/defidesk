@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DeFi Tracker</title>
+  <meta name="description" content="BTC/ETH prices, Uniswap pools, Aave wallet tracking, paper liquidity trading and an AI advisor.">
+  <meta name="theme-color" content="#0a0e1a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="DeFi Tracker">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="logo">◈ DEFI TRACKER</div>
+    <nav id="tabs" aria-label="Sections"></nav>
+    <div class="top-actions">
+      <button id="refresh" class="iconbtn" title="Refresh">↻</button>
+      <button id="ai-btn" class="aibtn" title="AI advisor (Ctrl/⌘ + K)">✦ AI</button>
+    </div>
+  </header>
+  <main id="main"></main>
+  <aside id="ai" class="ai-panel" aria-label="AI advisor"></aside>
+  <noscript><p style="padding:2rem">This app needs JavaScript.</p></noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
