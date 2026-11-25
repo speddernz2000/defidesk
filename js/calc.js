@@ -4,6 +4,7 @@ import { S, ethPrice, paperPoolAPR, paperSigma, loadStats } from './state.js';
 import { topPoolsCached, paperInfo, version } from './api.js';
 import { Position, simulate, estimateAPR } from './math.js';
 import { lineChart } from './charts.js';
+import { hedgeAnalysis } from './hedge.js';
 
 function slider(label, min, max, step, value, fmt, onInput) {
   const val = h('span', { class: 'mono small' }, fmt(value));
@@ -14,7 +15,7 @@ function slider(label, min, max, step, value, fmt, onInput) {
 }
 
 export function mount(root) {
-  let capital = 100, days = 30, move = 0, apr = 0, aprTouched = false, rangeMode = 0, rangePct = 25, poolId = '';
+  let capital = 100, days = 30, move = 0, apr = 0, aprTouched = false, rangeMode = 0, rangePct = 25, poolId = '', funding = 0, tradeCost = 1.5;
   let candidates = [], loadingPool = true, poolErr = '';
 
   const poolSel = h('select', { onchange: () => { poolId = poolSel.value; aprTouched = false; pickPool(); } });
@@ -33,7 +34,13 @@ export function mount(root) {
     h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Investment (USD)'), capIn),
     daysS.el, moveS.el, aprS.el,
     h('div', { class: 'muted small' }, "Defaults to the pool's recent fees ÷ liquidity. Past volume doesn't predict future volume."),
-    modeSeg, rangeBox, note);
+    modeSeg, rangeBox, note,
+    h('hr'), h('div', { class: 'eyebrow' }, 'DELTA HEDGE ASSUMPTIONS'),
+    h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Funding you receive on the short (% per year; negative if you pay)'),
+      h('input', { type: 'number', step: 1, value: funding, oninput: (e) => { funding = +e.target.value || 0; update(); } })),
+    h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Hedge trading costs (% of position per year)'),
+      h('input', { type: 'number', step: 0.5, min: 0, value: tradeCost, oninput: (e) => { tradeCost = Math.max(+e.target.value || 0, 0); update(); } })),
+    h('div', { class: 'muted small' }, 'Costs: ~0.05% fee per rebalancing trade. In my simulation a ±15% range cost roughly 1–2% a year. Funding changes constantly — check your venue.'));
   const results = h('div', { class: 'stack' });
   root.append(h('div', { class: 'two' }, inputs, results));
 
@@ -87,7 +94,45 @@ export function mount(root) {
           h('td', { class: 'num ' + cls(x.lpTotal - capital) }, (x.lpTotal - capital).toFixed(2)), h('td', { class: 'num ' + cls(x.il) }, pct(x.il * 100)),
           h('td', { class: 'num ' + cls(x.netVsHodl) }, x.netVsHodl.toFixed(2)))))) ),
       h('div', { class: 'muted small' }, 'Simplified model: fee APR held constant, no gas or slippage, and fees are earned only if the price ends inside the range. Not financial advice.'));
-    results.replaceChildren(summary, chart, scen);
+    // ----- delta hedge card -----
+    const est = estimateAPR(apr, pos.lower, pos.upper, p0, sigma());
+    const feesHorizon = (capital * est.whileInRange / 100 * days) / 365;
+    const hd = hedgeAnalysis({ capital, p0, lower: pos.lower, upper: pos.upper, feeIn: est.whileInRange, timeIn: est.timeInRange, sigmaDaily: sigma(), fundingPct: funding, tradeCostPct: tradeCost, feesEarned: feesHorizon });
+    const sym = paperInfo(pool() || {})?.symbol || 'ETH', tok = (v) => `${v < 1 ? v.toPrecision(3) : v.toFixed(3)} ${sym}`;
+    const row = (l, v, c = '') => [h('span', {}, l), h('b', { class: c }, v)];
+    const covers = est.whileInRange >= hd.breakEvenAPR, netUSD = (hd.netAPR / 100) * capital * days / 365;
+    const hedgeRows = [-30, -20, -10, 0, 10, 20, 30].map((m) => { const u = simulate(pos, apr, sigma(), days, m / 100); return { m, un: u.lpTotal - capital }; });
+    const hedgeCard = h('div', { class: 'card stack', style: { '--glow': 'var(--btc)' } },
+      h('div', { class: 'eyebrow', style: { color: 'var(--btc)' } }, 'DELTA HEDGE (SHORT THE VOLATILE TOKEN)'),
+      h('div', { class: 'muted small' }, `A delta hedge keeps a short position equal to the ${sym} your LP holds, so price direction stops mattering. What's left is fees earned minus the position's built-in losses (from price wiggling), funding and trading costs.`),
+      h('div', { class: 'kv' },
+        ...row(`${sym} held at entry (short this to be neutral)`, `${tok(hd.x0)} · ${usd(hd.x0 * p0)}`),
+        hd.full ? null : row(`Most ${sym} you can hold (at ${usd(pos.lower)})`, `${tok(hd.xmax)} · worth ${usd(hd.valueAtLower)}`),
+        hd.full ? null : row('Stablecoin held if price rises above the range', usd(hd.ymax)),
+        hd.bands ? row('Re-hedge when price leaves', `${usd(hd.bands.down)} – ${usd(hd.bands.up)} (each step ≈ ${tok(hd.bands.stepEth)})`) : null),
+      h('hr'),
+      h('div', { class: 'kv' },
+        ...row('Built-in loss from price wiggling', `${hd.gammaAPR.toFixed(1)}% a year`),
+        ...row('Break-even fee APR while in range', `${hd.breakEvenAPR.toFixed(1)}%`, 'cyan'),
+        ...row('Your estimated fee APR while in range', `${est.whileInRange.toFixed(1)}%`, covers ? 'up' : 'down'),
+        ...row('Expected time in range (7 days)', `${(est.timeInRange * 100).toFixed(0)}%`),
+        ...row(`Expected hedged return over ${days} days`, `${netUSD >= 0 ? '+' : '-'}${usd(Math.abs(netUSD))} (${hd.netAPR.toFixed(1)}% a year)`, netUSD >= 0 ? 'up' : 'down')),
+      h('div', { class: covers ? 'up small' : 'warn small' }, covers
+        ? `Fees cover the hedge costs here, with about ${(est.whileInRange - hd.breakEvenAPR).toFixed(0)} points of APR to spare.`
+        : `Fees fall short by about ${(hd.breakEvenAPR - est.whileInRange).toFixed(0)} points of APR. A wider range, lower costs or better funding would help.`),
+      h('hr'),
+      h('div', { class: 'eyebrow' }, 'IF PRICE FALLS (NO HEDGE)'),
+      h('div', { class: 'kv' },
+        ...row(`Fees earned over ${days} days (if it stays in range)`, usd(feesHorizon), 'up'),
+        ...row('Break-even price (value + fees = your start)', `${usd(hd.beDown.price)} (${((hd.beDown.price / p0 - 1) * 100).toFixed(1)}%)${hd.beDown.where === 'below' ? ' — below the range' : ''}`)),
+      h('div', { class: 'tablewrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, ['Price move', 'Price', 'Unhedged P/L', 'Delta-hedged (expected)'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, hedgeRows.map((r) => h('tr', {},
+          h('td', { class: 'num ' + cls(r.m) }, `${r.m >= 0 ? '+' : ''}${r.m}%`), h('td', { class: 'num' }, usd(p0 * (1 + r.m / 100))),
+          h('td', { class: 'num ' + cls(r.un) }, `${r.un >= 0 ? '+' : '-'}${usd(Math.abs(r.un))}`),
+          h('td', { class: 'num ' + cls(netUSD) }, `${netUSD >= 0 ? '+' : '-'}${usd(Math.abs(netUSD))}`)))))),
+      h('div', { class: 'muted small' }, `Out of range: below it you hold only ${sym} (so a matching short leaves you flat); above it you hold only stablecoin (so close the short, or it loses when price rises). The hedged column is an average that assumes continuous hedging; real results vary with how choppy the price is. Not financial advice.`));
+    results.replaceChildren(summary, chart, scen, hedgeCard);
   }
 
   function pickPool() {
