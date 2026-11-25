@@ -3,9 +3,10 @@ import { load, save, sleep, emit } from './util.js';
 import * as api from './api.js';
 import { derive, DEFAULT_SIGMA } from './math.js';
 
+const cachedCoins = load('cache:coins', null);          // last good prices, so something shows even when the data source is limited
 export const S = {
-  coins: [], coinsUpdated: null, coinsError: null,
-  tf: load('tf', '7D'), history: {}, historyErr: null, historyLoading: false,
+  coins: cachedCoins?.coins || [], coinsUpdated: cachedCoins?.t || null, coinsSource: cachedCoins?.source || 'CoinGecko', coinsError: null,
+  tf: load('tf', '7D'), history: load('cache:hist', {}), historyErr: null, historyLoading: false,
   wallets: load('wallets', []),                          // [{address,label}]
   selWallet: load('selWallet', null), snapshot: null, walletErr: null, walletLoading: false,
   watched: load('watched', []),                          // pool objects
@@ -19,8 +20,11 @@ export const ethPrice = () => S.coins.find((c) => c.id === 'ethereum')?.price ??
 
 // ---------- prices ----------
 export async function refreshCoins() {
-  try { S.coins = await api.fetchCoins(); S.coinsUpdated = Date.now(); S.coinsError = null; }
-  catch (e) { S.coinsError = e.message; }
+  try {
+    const r = await api.fetchCoins();
+    S.coins = r.coins; S.coinsSource = r.source; S.coinsUpdated = Date.now(); S.coinsError = null;
+    save('cache:coins', { t: S.coinsUpdated, source: r.source, coins: r.coins });
+  } catch (e) { S.coinsError = S.coins.length ? `${e.message} Showing the last saved prices.` : e.message; }
   emit('coins');
 }
 const histT = {};
@@ -29,7 +33,7 @@ export async function loadHistory(force = false) {
   for (const id of ['bitcoin', 'ethereum']) {
     const key = `${id}:${days}`;
     if (!force && S.history[key] && Date.now() - (histT[key] || 0) < 300000) continue;
-    try { S.history[key] = await api.fetchHistory(id, days); histT[key] = Date.now(); S.historyErr = null; }
+    try { S.history[key] = await api.fetchHistory(id, days); histT[key] = Date.now(); S.historyErr = null; save('cache:hist', S.history); }
     catch (e) { S.historyErr = e.message; }
     emit('history'); await sleep(1200);
   }

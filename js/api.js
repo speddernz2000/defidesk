@@ -15,8 +15,57 @@ export async function getRetry(url) {
 }
 
 // ---------- CoinGecko ----------
+// CoinGecko's free tier limits requests per internet address; after a 429 we pause it and use Coinbase instead.
+let geckoUntil = 0;
+async function gecko(url) {
+  if (Date.now() < geckoUntil) throw new RateLimited();
+  const r = await fetch(url);
+  if (r.status === 429) { geckoUntil = Date.now() + (parseInt(r.headers.get('retry-after'), 10) || 90) * 1000; throw new RateLimited(); }
+  if (!r.ok) throw new Error(`Server returned HTTP ${r.status}.`);
+  return r.json();
+}
+
+// ----- backup source: Coinbase public market data (no key) -----
+const CB = 'https://api.exchange.coinbase.com';
+const PRODUCTS = { bitcoin: { p: 'BTC-USD', symbol: 'BTC', name: 'Bitcoin' }, ethereum: { p: 'ETH-USD', symbol: 'ETH', name: 'Ethereum' } };
+async function cb(path) {
+  const r = await fetch(CB + path);
+  if (!r.ok) throw new Error(`Coinbase returned HTTP ${r.status}.`);
+  return r.json();
+}
+async function coinsFromCoinbase() {
+  const iso = (ms) => new Date(ms).toISOString(), now = Date.now(), out = [];
+  for (const [id, m] of Object.entries(PRODUCTS)) {
+    const [st, daily] = await Promise.all([cb(`/products/${m.p}/stats`), cb(`/products/${m.p}/candles?granularity=86400&start=${iso(now - 9 * 864e5)}&end=${iso(now)}`)]);
+    const last = parseFloat(st.last), open = parseFloat(st.open), c7 = daily[7]?.[4];       // candles: [time, low, high, open, close, volume], newest first
+    out.push({ id, symbol: m.symbol, name: m.name, price: last, change24h: (last / open - 1) * 100, change7d: c7 ? (last / c7 - 1) * 100 : null,
+      high24h: parseFloat(st.high), low24h: parseFloat(st.low), marketCap: null, volume24h: parseFloat(st.volume) * last });
+  }
+  return out;
+}
+async function historyFromCoinbase(id, days) {
+  const m = PRODUCTS[id], gran = days <= 1 ? 300 : days <= 7 ? 3600 : days <= 30 ? 21600 : 86400;
+  const now = Date.now(), start = now - days * 864e5, chunk = gran * 300 * 1000, pts = new Map();
+  for (let s = start; s < now; s += chunk) {                                                  // Coinbase returns at most 300 candles per request
+    const e = Math.min(s + chunk, now);
+    const rows = await cb(`/products/${m.p}/candles?granularity=${gran}&start=${new Date(s).toISOString()}&end=${new Date(e).toISOString()}`);
+    rows.forEach((r) => pts.set(r[0], { t: r[0] * 1000, p: r[4] }));
+  }
+  return [...pts.values()].sort((a, b) => a.t - b.t);
+}
+
+/** Prices: CoinGecko first, Coinbase if CoinGecko is limited or down. Returns { coins, source }. */
 export async function fetchCoins() {
-  const arr = await getJSON('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum&sparkline=true&price_change_percentage=24h,7d');
+  try { return { coins: await coinsFromGecko(), source: 'CoinGecko' }; }
+  catch (e) { try { return { coins: await coinsFromCoinbase(), source: 'Coinbase' }; } catch { throw e; } }
+}
+export async function fetchHistory(id, days) {
+  try { return await historyFromGecko(id, days); }
+  catch (e) { try { return await historyFromCoinbase(id, days); } catch { throw e; } }
+}
+
+async function coinsFromGecko() {
+  const arr = await gecko('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin,ethereum&sparkline=true&price_change_percentage=24h,7d');
   const coins = arr.map((d) => ({
     id: d.id, symbol: String(d.symbol).toUpperCase(), name: d.name, price: d.current_price,
     change24h: d.price_change_percentage_24h_in_currency ?? d.price_change_percentage_24h,
@@ -25,8 +74,8 @@ export async function fetchCoins() {
   }));
   return coins.sort((a) => (a.id === 'bitcoin' ? -1 : 1));
 }
-export async function fetchHistory(id, days) {
-  const d = await getJSON(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}`);
+async function historyFromGecko(id, days) {
+  const d = await gecko(`https://api.coingecko.com/api/v3/coins/${id}/market_chart?vs_currency=usd&days=${days}`);
   return (d.prices || []).map(([t, p]) => ({ t, p }));
 }
 

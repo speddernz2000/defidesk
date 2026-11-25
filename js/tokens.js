@@ -52,7 +52,7 @@ export function mount(root) {
       S.coinsError ? h('div', { class: 'banner' }, S.coinsError) : null,
       S.historyErr ? h('div', { class: 'banner' }, `Chart: ${S.historyErr}`) : null);
     cards.replaceChildren(...(S.coins.length ? S.coins.map(card) : [h('div', { class: 'center pad muted' }, S.coinsError ? '' : 'Loading prices…')]));
-    foot.textContent = `Updated ${ago(S.coinsUpdated)} · prices refresh every minute · data: CoinGecko`;
+    foot.textContent = `Updated ${ago(S.coinsUpdated)} · prices refresh every minute · data: ${S.coinsSource}${S.coinsSource === 'Coinbase' ? ' (CoinGecko is limiting requests right now)' : ''}`;
   }
   on('coins', render); on('history', render);
   render();
