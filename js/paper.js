@@ -1,7 +1,7 @@
 // Paper LP tab: practise liquidity positions with test money.
 import { h, usd, pct, cls, ago, on } from './util.js';
 import { S, paperOpen, paperClosed, paperPositionsValue, paperTotal, loadStats, paperPoolAPR, paperSigma, enterPaper, closePaper, resetPaper, refreshPaper } from './state.js';
-import { NETWORKS, topPoolsCached, fetchPools, paperInfo, version, poolAPR24 } from './api.js';
+import { NETWORKS, topPoolsCached, fetchPools, paperInfo, version, poolAPR24, uniswapPoolUrl } from './api.js';
 import { Position, estimateAPR, derive } from './math.js';
 import { rangeBar } from './charts.js';
 
@@ -19,7 +19,7 @@ export function mount(root) {
   const netSel = h('select', { onchange: () => { network = netSel.value; loadPools(); } }, NETWORKS.map((n) => h('option', { value: n.id }, n.label)));
   netSel.value = network;
   const poolSel = h('select', { class: 'grow', onchange: () => { poolId = poolSel.value; pickPool(); } });
-  const poolMsg = h('div'); const poolStats = h('div', { class: 'row gap wrap' });
+  const poolMsg = h('div'); const poolStats = h('div', { class: 'row gap wrap' }); const poolLink = h('div');
   const amtIn = h('input', { type: 'number', min: 0, step: 'any', value: amount, class: 'grow', oninput: () => { amount = +amtIn.value || 0; refreshEntry(false); } });
   const quick = [25, 50, 100].map((p) => h('button', { class: 'btn ghost', onclick: () => { amount = Math.floor(S.paper.cash * p) / 100; amtIn.value = amount; refreshEntry(false); } }, p === 100 ? 'MAX' : `${p}%`));
   const presetBox = h('div', { class: 'presets' }); const customBox = h('div', { class: 'row gap' });
@@ -27,7 +27,7 @@ export function mount(root) {
   const hint = h('div', { class: 'muted small' }); const msgBox = h('div');
   const entry = h('div', { class: 'card stack', style: { '--glow': 'var(--cyan)' } },
     h('div', { class: 'eyebrow' }, 'NEW PAPER POSITION'),
-    h('div', { class: 'row gap' }, netSel, poolSel), poolMsg, poolStats,
+    h('div', { class: 'row gap' }, netSel, poolSel), poolMsg, poolStats, poolLink,
     h('div', { class: 'field' }, h('div', { class: 'split small' }, h('span', { class: 'lbl' }, 'Deposit (test USD)'), h('span', { class: 'lbl', id: 'avail' })),
       h('div', { class: 'row gap' }, amtIn, ...quick)),
     h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Position range'), presetBox, barBox, customBox), summaryBox, enterBtn, hint, msgBox);
@@ -71,6 +71,7 @@ export function mount(root) {
     poolStats.replaceChildren(...(p && info ? [
       ['%s price'.replace('%s', info.symbol), usd(info.price)], ['TVL', usd(p.tvl, true)], ['24h volume', usd(p.volume24h, true)],
       [S.stats[p.id] ? 'Pool APR (7d avg)' : 'Pool APR (24h)', paperPoolAPR(p) != null ? `${paperPoolAPR(p).toFixed(0)}%` : '—']].map(([l, v]) => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, l), h('b', {}, v))) : []));
+    poolLink.replaceChildren(p ? realLink(p.network, p.address, 'Open this pool on Uniswap ↗', 'Uniswap’s page for this pool has an “Add liquidity” button to enter with real funds from your own wallet.') : '');
     presetBox.replaceChildren(...PRESETS.map((r) => {
       const e = estimateFor(boundsFor(r.id));
       return h('button', { class: 'preset' + (preset === r.id ? ' on' : ''), onclick: () => { preset = r.id; refreshEntry(false); } },
@@ -120,6 +121,12 @@ export function mount(root) {
     entering = false; refreshEntry(false);
   }
 
+  // Link to the real pool on Uniswap (real money, user's own wallet). Paper positions are never sent anywhere.
+  function realLink(network, address, label, note) {
+    const a = h('a', { class: 'btn ghost uni', href: uniswapPoolUrl(network, address), target: '_blank', rel: 'noopener', title: 'Opens Uniswap — uses real funds from your own wallet' }, label);
+    return note ? h('div', { class: 'row gap wrap' }, a, h('span', { class: 'muted small grow' }, note)) : a;
+  }
+
   // ----- account + positions -----
   function renderAccount() {
     const pnl = paperTotal() - S.paper.startBalance, st = (l, v, c = '') => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, l), h('b', { class: c }, v));
@@ -135,7 +142,7 @@ export function mount(root) {
     return h('div', { class: 'subcard' },
       h('div', { class: 'split wrap' }, h('div', { class: 'row gap wrap' }, h('b', { class: 'big-name' }, p.poolName), h('span', { class: 'muted small' }, `${p.version} · ${netLabel(p.network)}`),
         h('span', { class: 'badge ' + (d.inRange ? 'up' : 'down') }, d.inRange ? 'IN RANGE' : 'OUT OF RANGE')),
-        h('div', { class: 'row gap' }, h('span', { class: 'muted small' }, `opened ${ago(p.openedAt)}`), h('button', { class: 'btn danger', onclick: () => closePaper(p.id) }, 'Close'))),
+        h('div', { class: 'row gap' }, h('span', { class: 'muted small' }, `opened ${ago(p.openedAt)}`), realLink(p.network, p.address, 'Enter for real ↗'), h('button', { class: 'btn danger', onclick: () => closePaper(p.id) }, 'Close'))),
       h('div', { html: rangeBar({ lower: p.lower, upper: p.upper, current: p.currentPrice, entry: p.entryPrice }) }),
       h('div', { class: 'row gap wrap' }, st('Value now', usd(d.totalValue)), st('Profit / loss', `${d.pnl >= 0 ? '+' : '-'}${usd(Math.abs(d.pnl))} (${pct(d.pnl / p.capital * 100)})`, cls(d.pnl)),
         st('Fees earned*', usd(p.feesAccrued), 'up'), st('Impermanent loss', pct(d.il * 100), cls(d.il)), st('Est. APR (forecast)', `${d.est.forecast.toFixed(0)}%`)),

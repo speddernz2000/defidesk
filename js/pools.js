@@ -1,9 +1,8 @@
 // Uniswap Pools tab: tracked pools + browse top pools.
 import { h, usd, pct, cls, ago, on } from './util.js';
 import { S, isWatched, toggleWatch, addWatchByAddress } from './state.js';
-import { NETWORKS, topPoolsCached, version, poolAPR24 } from './api.js';
+import { NETWORKS, topPoolsCached, version, poolAPR24, uniswapPoolUrl } from './api.js';
 
-const uniNet = (n) => (n === 'eth' ? 'ethereum' : n === 'polygon_pos' ? 'polygon' : n);
 const netLabel = (id) => NETWORKS.find((n) => n.id === id)?.label || id;
 
 export function mount(root) {
@@ -50,7 +49,7 @@ export function mount(root) {
           h('td', { class: 'num' }, p.feePercent != null ? `${+p.feePercent}%` : '—'),
           h('td', { class: 'num' }, apr != null ? `${apr.toFixed(1)}%` : '—'),
           h('td', { class: 'num ' + cls(p.priceChange24h) }, pct(p.priceChange24h)),
-          h('td', {}, h('a', { href: `https://app.uniswap.org/explore/pools/${uniNet(p.network)}/${p.address}`, target: '_blank', rel: 'noopener', title: 'Open on Uniswap' }, '↗')));
+          h('td', {}, h('a', { class: 'btn ghost uni', href: uniswapPoolUrl(p.network, p.address), target: '_blank', rel: 'noopener', title: 'Open this pool on Uniswap to add real liquidity' }, 'Uniswap ↗')));
       })));
   }
 
