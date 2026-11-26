@@ -16,6 +16,7 @@ export function mount(root) {
   let poolId = '', amount = 1000, preset = 'standard', lowerPct = -8, upperPct = 8, message = null, entering = false, showClosed = false;
 
   const account = h('div', { class: 'card', style: { '--glow': 'var(--cyan)' } });
+  const lpTotals = h('div', { class: 'card lpsum', style: { '--glow': 'var(--violet)' } });
   const netSel = h('select', { onchange: () => { network = netSel.value; loadPools(); } }, NETWORKS.map((n) => h('option', { value: n.id }, n.label)));
   netSel.value = network;
   const poolSel = h('select', { class: 'grow', onchange: () => { poolId = poolSel.value; pickPool(); } });
@@ -32,7 +33,7 @@ export function mount(root) {
       h('div', { class: 'row gap' }, amtIn, ...quick)),
     h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Position range'), presetBox, barBox, customBox), summaryBox, enterBtn, hint, msgBox);
   const positions = h('div', { class: 'stack' });
-  root.append(account, h('div', { class: 'two paper' }, entry, positions),
+  root.append(lpTotals, account, h('div', { class: 'two paper' }, entry, positions),
     h('div', { class: 'muted small' }, 'Paper trading uses test money only — nothing here touches a real wallet or pool. Prices and pool APR are live; fees are simulated from the pool’s recent volume ÷ liquidity, ignore gas and slippage, and are not a promise of real returns.'));
 
   // ----- helpers -----
@@ -128,6 +129,19 @@ export function mount(root) {
   }
 
   // ----- account + positions -----
+  // Totals across the open paper positions.
+  function renderSummary() {
+    const rows = paperOpen().map((p) => ({ p, d: derive(p) })), sum = (fn) => rows.reduce((t, r) => t + fn(r), 0);
+    const value = sum((r) => r.d.totalValue), invested = sum((r) => r.p.capital), fees = sum((r) => r.p.feesAccrued), pnl = value - invested;
+    const daily = sum((r) => (r.d.totalValue * r.d.est.forecast) / 100 / 365), apr = value > 0 ? (daily * 365 * 100) / value : 0;
+    const box = (label, big, note, c = '') => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, label), h('b', { class: c }, big), h('span', { class: 'lbl' }, note));
+    lpTotals.replaceChildren(
+      box('Total value', usd(value), 'open positions', 'cyan'),
+      box('Unclaimed fees', usd(fees), `${rows.length} position${rows.length === 1 ? '' : 's'}`),
+      box('PnL', rows.length ? `${pnl >= 0 ? '+' : '-'}${usd(Math.abs(pnl))}` : '—', rows.length ? pct((pnl / invested) * 100) : 'nothing open', rows.length ? cls(pnl) : ''),
+      box('Est. daily rewards', usd(daily), 'at forecast APR'),
+      box('APR', `${apr.toFixed(0)}%`, 'value-weighted'));
+  }
   function renderAccount() {
     const pnl = paperTotal() - S.paper.startBalance, st = (l, v, c = '') => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, l), h('b', { class: c }, v));
     account.replaceChildren(h('div', { class: 'split wrap' }, h('div', { class: 'row gap wrap' },
@@ -158,8 +172,8 @@ export function mount(root) {
         showClosed ? h('div', { class: 'stack' }, closed.map((p) => h('div', { class: 'split small' }, h('span', {}, h('b', {}, `${p.poolName} · ${p.version}`), ` ${ago(p.closedAt)}`),
           h('span', { class: 'mono' }, `${usd(p.capital)} → ${usd(p.closeValue)} `, h('b', { class: cls(p.closeValue - p.capital) }, (p.closeValue - p.capital).toFixed(2)))))) : null) : null);
   }
-  const renderAll = () => { renderAccount(); renderPositions(); refreshEntry(false); };
-  on('paper', renderAll); on('stats', () => refreshEntry(false));
+  const renderAll = () => { renderSummary(); renderAccount(); renderPositions(); refreshEntry(false); };
+  on('paper', renderAll); on('stats', () => { renderSummary(); refreshEntry(false); });
   renderAll();
   return { show() { renderAll(); if (!pools.length && !loading) loadPools(); refreshPaper(); } };
 }
