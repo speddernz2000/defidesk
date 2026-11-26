@@ -19,15 +19,15 @@ export function mount(root) {
   const netSel = h('select', { onchange: () => { network = netSel.value; loadPools(); } }, NETWORKS.map((n) => h('option', { value: n.id }, n.label)));
   netSel.value = network;
   const poolSel = h('select', { class: 'grow', onchange: () => { poolId = poolSel.value; pickPool(); } });
-  const poolMsg = h('div'); const poolStats = h('div', { class: 'row gap wrap' }); const poolLink = h('div');
+  const poolMsg = h('div'); const poolStats = h('div', { class: 'row gap wrap' }); const poolLink = h('span');
   const amtIn = h('input', { type: 'number', min: 0, step: 'any', value: amount, class: 'grow', oninput: () => { amount = +amtIn.value || 0; refreshEntry(false); } });
   const quick = [25, 50, 100].map((p) => h('button', { class: 'btn ghost', onclick: () => { amount = Math.floor(S.paper.cash * p) / 100; amtIn.value = amount; refreshEntry(false); } }, p === 100 ? 'MAX' : `${p}%`));
   const presetBox = h('div', { class: 'presets' }); const customBox = h('div', { class: 'row gap' });
   const barBox = h('div'); const summaryBox = h('div'); const enterBtn = h('button', { class: 'btn big', onclick: enter }, 'Enter paper position');
   const hint = h('div', { class: 'muted small' }); const msgBox = h('div');
   const entry = h('div', { class: 'card stack', style: { '--glow': 'var(--cyan)' } },
-    h('div', { class: 'eyebrow' }, 'NEW PAPER POSITION'),
-    h('div', { class: 'row gap' }, netSel, poolSel), poolMsg, poolStats, poolLink,
+    h('div', { class: 'split wrap' }, h('div', { class: 'eyebrow' }, 'NEW PAPER POSITION'), poolLink),
+    h('div', { class: 'row gap' }, netSel, poolSel), poolMsg, poolStats,
     h('div', { class: 'field' }, h('div', { class: 'split small' }, h('span', { class: 'lbl' }, 'Deposit (test USD)'), h('span', { class: 'lbl', id: 'avail' })),
       h('div', { class: 'row gap' }, amtIn, ...quick)),
     h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Position range'), presetBox, barBox, customBox), summaryBox, enterBtn, hint, msgBox);
@@ -71,7 +71,7 @@ export function mount(root) {
     poolStats.replaceChildren(...(p && info ? [
       ['%s price'.replace('%s', info.symbol), usd(info.price)], ['TVL', usd(p.tvl, true)], ['24h volume', usd(p.volume24h, true)],
       [S.stats[p.id] ? 'Pool APR (7d avg)' : 'Pool APR (24h)', paperPoolAPR(p) != null ? `${paperPoolAPR(p).toFixed(0)}%` : '—']].map(([l, v]) => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, l), h('b', {}, v))) : []));
-    poolLink.replaceChildren(p ? realLink(p.network, p.address, 'Open this pool on Uniswap ↗', 'Uniswap’s page for this pool has an “Add liquidity” button to enter with real funds from your own wallet.') : '');
+    poolLink.replaceChildren(p ? realLink(p.network, p.address, 'Open on Uniswap ↗') : '');
     presetBox.replaceChildren(...PRESETS.map((r) => {
       const e = estimateFor(boundsFor(r.id));
       return h('button', { class: 'preset' + (preset === r.id ? ' on' : ''), onclick: () => { preset = r.id; refreshEntry(false); } },
