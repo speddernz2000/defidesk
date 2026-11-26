@@ -107,6 +107,9 @@ export function parsePool(d, network) {
     basePriceUSD: num(a.base_token_price_usd), quotePriceUSD: num(a.quote_token_price_usd),
   };
 }
+// Uniswap's own pool page (has the real "Add liquidity" button). Uniswap uses different chain names from GeckoTerminal.
+const UNI_CHAIN = { eth: 'ethereum', arbitrum: 'arbitrum', base: 'base', optimism: 'optimism', polygon_pos: 'polygon' };
+export const uniswapPoolUrl = (network, address) => `https://app.uniswap.org/explore/pools/${UNI_CHAIN[network] || network}/${address}`;
 export const isUniswap = (p) => p.dex.toLowerCase().includes('uniswap');
 export const version = (p) => (p.dex.includes('v4') ? 'V4' : p.dex.includes('v3') ? 'V3' : p.dex.includes('v2') ? 'V2' : '?');
 export const poolAPR24 = (p) => (p.feePercent != null && p.tvl > 0 ? (p.volume24h * (p.feePercent / 100)) / p.tvl * 365 * 100 : null);
