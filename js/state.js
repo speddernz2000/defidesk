@@ -61,8 +61,9 @@ export async function refreshWatched() {
     const by = {}; S.watched.forEach((p) => (by[p.network] ||= []).push(p.address));
     const fresh = [];
     for (const [net, addrs] of Object.entries(by)) fresh.push(...(await api.fetchPools(net, addrs)));
-    const order = S.watched.map((p) => p.id);
-    S.watched = fresh.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    // Update figures in place: a pool missing from the response must not be dropped (sync would delete it everywhere).
+    const byId = new Map(fresh.map((p) => [p.id, p]));
+    S.watched = S.watched.map((p) => byId.get(p.id) || p);
     save('watched', S.watched);
   } catch { /* keep cached */ }
   emit('watched');
@@ -137,7 +138,7 @@ export function closePaper(id) {
   p.closedAt = now; p.closePrice = p.currentPrice; p.closeValue = v; S.paper.cash += v;
   persistPaper(); emit('paper');
 }
-export function resetPaper() { S.paper = { startBalance: 10000, cash: 10000, positions: [] }; persistPaper(); emit('paper'); }
+export function resetPaper() { S.paper = { startBalance: 10000, cash: 10000, positions: [], resetAt: Date.now() }; persistPaper(); emit('paper'); }
 
 /** Refresh live prices for open positions and accrue simulated fees. */
 export async function refreshPaper() {

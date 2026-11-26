@@ -7,6 +7,7 @@ import * as calc from './calc.js';
 import * as wallet from './wallet.js';
 import * as paper from './paper.js';
 import * as ai from './ai.js';
+import { startSync } from './sync.js';
 
 const TABS = [['tokens', 'Tokens', tokens], ['pools', 'Uniswap Pools', pools], ['calc', 'Calculator', calc], ['wallet', 'Wallet', wallet], ['paper', 'Paper LP', paper]];
 const main = $('#main'), nav = $('#tabs');
@@ -46,6 +47,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { re
 show(current);
 refreshCoins(); refreshWatched(); refreshPaper();
 if (S.selWallet) refreshWallet();
+startSync();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});

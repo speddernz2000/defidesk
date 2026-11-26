@@ -4,5 +4,11 @@
   "compatibility_date": "2026-11-26",
   "workers_dev": true,
   "preview_urls": false,
-  "assets": { "directory": "." }
+  "main": "worker/index.js",
+  "assets": { "directory": ".", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "defidesk", "database_id": "a53c2cb6-2d29-47b6-9e1e-b44544444cb7" }],
+  "vars": {
+    "ACCESS_TEAM": "https://scottpedder-nz.cloudflareaccess.com",
+    "ACCESS_AUD": "b8de8a0f65080fee3aea1f95e2957cc65828877c5174ee0efb305529bf3cee6e"
+  }
 }

@@ -71,6 +71,7 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; text
 .btn.uni { color: var(--cyan); border-color: rgba(0,229,242,.4); min-height: 34px; padding: .35rem .7rem; font-size: .85rem; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .linkbtn { background: none; border: 0; color: var(--muted); cursor: pointer; padding: .3rem 0; font: inherit; text-align: left; } .linkbtn.down { color: var(--down); }
+.syncbadge { font-size: .75rem; white-space: nowrap; }
 .seg { display: inline-flex; background: var(--card); border: 1px solid var(--stroke); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
 .seg button { border: 0; background: transparent; color: var(--muted); padding: .4rem .8rem; border-radius: 8px; cursor: pointer; font-weight: 600; min-height: 34px; }
 .seg button.on { background: rgba(0,229,242,.18); color: var(--cyan); }
@@ -111,6 +112,6 @@ td { padding: .55rem .6rem; border-bottom: 1px solid rgba(255,255,255,.05); whit
 input, textarea, select { font-size: 16px; }   /* stop iOS zooming into fields */
 
 @media (max-width: 960px) {
-  .top { flex-wrap: wrap; } #tabs { order: 3; width: 100%; max-width: 100%; justify-content: flex-start; margin: 0; } .top-actions { margin-left: auto; }
+  .top { flex-wrap: wrap; } #tabs { order: 3; flex-basis: 100%; width: 100%; max-width: 100%; justify-content: flex-start; margin: 0; } .top-actions { margin-left: auto; }
 }
 @media (max-width: 700px) { .logo { font-size: .85rem; } .price { font-size: 1.8rem; } }
