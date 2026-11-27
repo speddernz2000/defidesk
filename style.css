@@ -134,6 +134,12 @@ td { padding: .55rem .6rem; border-bottom: 1px solid rgba(255,255,255,.05); whit
 input[type=text].re-input { flex: 1; width: 100%; min-width: 0; text-align: center; background: transparent; border: 0; color: var(--cyan); font-weight: 700; padding: .2rem; }
 .re-step { background: none; border: 0; color: var(--cyan); font-size: 1.2rem; min-width: 38px; min-height: 38px; cursor: pointer; }
 
+/* bots */
+.choice { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: .6rem .7rem; border-radius: 10px; border: 1px solid var(--stroke); background: rgba(255,255,255,.04); color: var(--text); cursor: pointer; }
+.choice.on { border-color: var(--cyan); background: rgba(0,229,242,.12); }
+.badge.muted { color: var(--muted); } .tradelist { max-height: 220px; overflow: auto; } .tradelist td, .tradelist th { text-align: left; font-size: .8rem; }
+label.field { min-width: 0; } label.field input { width: 100%; }
+
 /* windows */
 .modal { width: min(820px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto; background: var(--bg); color: var(--text); border: 1px solid rgba(0,229,242,.35); border-radius: 16px; padding: 1.1rem; }
 .modal::backdrop { background: rgba(0,0,0,.65); } .modal > .eyebrow { margin-bottom: .8rem; }

@@ -6,10 +6,11 @@ import * as pools from './pools.js';
 import * as calc from './calc.js';
 import * as wallet from './wallet.js';
 import * as paper from './paper.js';
+import * as bots from './bots.js';
 import * as ai from './ai.js';
 import { startSync } from './sync.js';
 
-const TABS = [['tokens', 'Tokens', tokens], ['pools', 'Uniswap Pools', pools], ['calc', 'Calculator', calc], ['wallet', 'Wallet', wallet], ['paper', 'Paper LP', paper]];
+const TABS = [['tokens', 'Tokens', tokens], ['pools', 'Uniswap Pools', pools], ['calc', 'Calculator', calc], ['wallet', 'Wallet', wallet], ['paper', 'Paper LP', paper], ['bots', 'Bots', bots]];
 const main = $('#main'), nav = $('#tabs');
 const views = {};
 let current = load('tab', 'tokens');
