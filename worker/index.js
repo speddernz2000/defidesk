@@ -1,6 +1,6 @@
 // Sync API. Cloudflare Access guards the whole site; this Worker still verifies the Access token itself
 // before touching the database, and every row is keyed by the signed-in email.
-const KEYS = new Set(['wallets', 'watched', 'paper']);
+const KEYS = new Set(['wallets', 'watched', 'paper', 'bots']);
 const MAX_BYTES = 500_000;
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });

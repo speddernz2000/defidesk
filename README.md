@@ -9,7 +9,7 @@ It's a plain static web app (no build step, no server, no accounts) that install
 3. Open it from the new icon — it runs full-screen like an app.
 
 ## Your data stays on the device
-Except on the hosted, signed-in site: there, wallet addresses, tracked pools and paper positions also sync to your own account (`worker/`, Cloudflare D1). AI keys never leave the device.
+Except on the hosted, signed-in site: there, wallet addresses, tracked pools, paper positions and paper bots also sync to your own account (`worker/`, Cloudflare D1). AI keys never leave the device.
 
 Everything you save (tracked pools, wallet addresses, paper positions, AI keys) lives in that browser's local storage on that device.
 Nothing is sent to any server of ours — there isn't one. The app talks directly to CoinGecko, GeckoTerminal, the Aave API, public RPC nodes and your chosen AI provider.

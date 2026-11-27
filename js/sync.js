@@ -4,8 +4,8 @@ import { h, load, save, remove, on, emit } from './util.js';
 import { S, selectWallet, refreshWallet } from './state.js';
 import { DOCS, syncDocs } from './merge.js';
 
-const EMPTY = { wallets: () => [], watched: () => [], paper: () => ({ startBalance: 10000, cash: 10000, positions: [] }) };
-const EVENT = { wallets: 'wallet', watched: 'watched', paper: 'paper' };
+const EMPTY = { bots: () => [], wallets: () => [], watched: () => [], paper: () => ({ startBalance: 10000, cash: 10000, positions: [] }) };
+const EVENT = { bots: 'bots', wallets: 'wallet', watched: 'watched', paper: 'paper' };
 let busy = false, again = false, timer = null, badge = null;
 let base = load('sync:base', {});
 

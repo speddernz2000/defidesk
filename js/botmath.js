@@ -29,7 +29,7 @@ export function rsi(v, n) {
 /**
  * Replays a bot over candles [{time (ms), open, close}], oldest first. A decision uses only candles that have closed and is
  * filled at the next candle's opening price, so the bot never trades on a price it couldn't have had.
- * bot: { coin, strategy, interval (seconds), capital, feePct, startedAt, stoppedAt }
+ * bot: { coin, strategy, interval (seconds), capital, feePct, startedAt, stoppedAt, stopPrice }
  */
 export function runBot(bot, candles, now = Date.now()) {
   const r = { trades: [], curve: [], cash: bot.capital, units: 0, value: bot.capital, holdValue: bot.capital, fees: 0, maxDropPct: 0, signal: 'not enough price history yet' };
@@ -76,7 +76,9 @@ export function runBot(bot, candles, now = Date.now()) {
     peak = Math.max(peak, r.value); r.maxDropPct = Math.max(r.maxDropPct, (1 - r.value / peak) * 100);
     r.curve.push({ time: c.time, bot: r.value, hold: r.holdValue });
   }
-  if (bot.stoppedAt && all.length) { sell(all.at(-1).close, end, 'Bot stopped'); r.value = r.cash; }   // sells what it still holds
+  if (bot.stoppedAt && all.length) { const price = bot.stopPrice || all.at(-1).close;
+    if (r.curve.length) { r.holdValue *= price / all.at(-1).close; }
+    sell(price, end, 'Bot stopped'); r.value = r.cash; }   // sells what it still holds
   const s = all.length - 1;
   if (bot.strategy === 'trend' && fast[s] != null && slow[s] != null) r.signal = `20 average is ${(Math.abs(fast[s] / slow[s] - 1) * 100).toFixed(1)}% ${fast[s] > slow[s] ? 'above' : 'below'} the 50 average`;
   else if (bot.strategy === 'rsi' && strength[s] != null) r.signal = `RSI is ${strength[s].toFixed(0)} (buys below 30, sells above 70)`;

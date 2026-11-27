@@ -1,5 +1,6 @@
-// Bots tab: fake-money trading bots. Saved in this browser only; trades are replayed from price history.
-import { h, usd, cls, ago, load, save } from './util.js';
+// Bots tab: fake-money trading bots. Their settings sync between devices; trades are replayed from price history.
+import { h, usd, cls, ago, save, on, emit } from './util.js';
+import { S } from './state.js';
 import { STRATEGIES, WARM_UP, runBot, fetchCandles } from './botmath.js';
 import { lineChart } from './charts.js';
 import { signed } from './dialogs.js';
@@ -8,10 +9,9 @@ const INTERVALS = [[3600, 'Hourly'], [86400, 'Daily']];
 const intervalName = (s) => (s === 3600 ? 'Hourly' : 'Daily');
 
 export function mount(root) {
-  let bots = load('bots', []);
   const results = {}, cache = {}, openTrades = new Set();
   let coin = 'BTC', strategy = 'trend', interval = 86400, days = 365, busy = false, again = false, error = '', checked = null, testing = false, test = null, testError = '';
-  const persist = () => save('bots', bots);
+  const persist = () => { save('bots', S.bots); emit('bots'); };         // S.bots is replaced when sync brings changes
 
   // Fetch only what's missing; always the same warm-up window per bot, so its trades don't change between visits.
   async function candles(c, step, start, end) {
@@ -29,11 +29,11 @@ export function mount(root) {
   async function refresh() {
     if (busy) { again = true; return; }
     busy = true; error = ''; drawList();
-    for (const bot of [...bots]) {
-      if (bot.stoppedAt && results[bot.id]?.trades.at(-1)?.reason === 'Bot stopped') continue;     // can't change any more
+    for (const bot of [...S.bots]) {
+      if (bot.stoppedAt && results[bot.id]?.stoppedAt === bot.stoppedAt) continue;     // can't change any more
       try {
         const c = await candles(bot.coin, bot.interval, bot.startedAt, bot.stoppedAt || Date.now());
-        const now = bots.find((x) => x.id === bot.id); if (now) results[bot.id] = runBot(now, c);
+        const now = S.bots.find((x) => x.id === bot.id); if (now) results[bot.id] = { ...runBot(now, c), stoppedAt: now.stoppedAt };
       } catch (e) { error = e.message; }
       drawList();
     }
@@ -77,7 +77,15 @@ export function mount(root) {
     } catch (e) { testError = e.message; }
     testing = false; drawSetup();
   }
-  function start() { bots.unshift({ ...draft(), id: crypto.randomUUID() }); persist(); refresh(); }
+  function start() { S.bots.unshift({ ...draft(), id: crypto.randomUUID() }); persist(); }
+  // The price is saved with the stop, so every device shows the same final sale.
+  async function stopBot(id) {
+    const bot = S.bots.find((x) => x.id === id); if (!bot || bot.stoppedAt) return;
+    let price = null;
+    try { price = (await candles(bot.coin, bot.interval, bot.startedAt, Date.now())).at(-1)?.close ?? null; } catch { /* use the candle's price */ }
+    const now = S.bots.find((x) => x.id === id); if (!now || now.stoppedAt) return;
+    now.stoppedAt = Date.now(); now.stopPrice = price; persist();
+  }
 
   // ----- running bots -----
   const stat = (l, v, c = '') => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, l), h('b', { class: c }, v));
@@ -95,8 +103,8 @@ export function mount(root) {
   }
   function row(bot) {
     const r = results[bot.id], running = !bot.stoppedAt;
-    const stop = () => { if (confirm("Stop this bot? It sells anything it holds at the current price and can't be restarted.")) { bot.stoppedAt = Date.now(); persist(); refresh(); } };
-    const del = () => { if (confirm('Delete this bot? Its results and trade list are removed.')) { bots = bots.filter((x) => x.id !== bot.id); delete results[bot.id]; persist(); drawList(); } };
+    const stop = () => { if (confirm("Stop this bot? It sells anything it holds at the current price and can't be restarted.")) stopBot(bot.id); };
+    const del = () => { if (confirm('Delete this bot? Its results and trade list are removed.')) { S.bots = S.bots.filter((x) => x.id !== bot.id); delete results[bot.id]; persist(); } };
     return h('div', { class: 'subcard' },
       h('div', { class: 'split wrap' }, h('div', { class: 'row gap wrap' }, h('b', { class: 'big-name' }, `${bot.coin} · ${STRATEGIES[bot.strategy].name}`), h('span', { class: 'muted small' }, intervalName(bot.interval)),
         h('span', { class: 'badge ' + (running ? 'up' : 'muted') }, running ? 'RUNNING' : 'STOPPED')),
@@ -113,14 +121,15 @@ export function mount(root) {
   }
   const list = h('div', { class: 'card stack', style: { '--glow': 'var(--up)' } });
   function drawList() {
-    list.replaceChildren(h('div', { class: 'split' }, h('div', { class: 'eyebrow', style: { color: 'var(--up)' } }, `YOUR BOTS (${bots.length})`), h('span', { class: 'muted small' }, busy ? 'checking…' : checked ? `checked ${ago(checked)}` : '')),
+    list.replaceChildren(h('div', { class: 'split' }, h('div', { class: 'eyebrow', style: { color: 'var(--up)' } }, `YOUR BOTS (${S.bots.length})`), h('span', { class: 'muted small' }, busy ? 'checking…' : checked ? `checked ${ago(checked)}` : '')),
       error ? h('div', { class: 'banner' }, error) : null,
-      bots.length ? bots.map(row) : h('div', { class: 'center pad muted' }, 'No bots yet. Pick a strategy, test it on past prices, then start it with fake money.'));
+      S.bots.length ? S.bots.map(row) : h('div', { class: 'center pad muted' }, 'No bots yet. Pick a strategy, test it on past prices, then start it with fake money.'));
   }
 
   root.append(h('div', { class: 'two paper' }, setup, list),
-    h('div', { class: 'muted small' }, 'Paper trading bots use fake money only: nothing connects to an exchange account or places a real order. Prices are from Coinbase. Trades are replayed from price history, ignore slippage, and past results do not predict future ones. Bots are saved in this browser only. Not financial advice.'));
+    h('div', { class: 'muted small' }, 'Paper trading bots use fake money only: nothing connects to an exchange account or places a real order. Prices are from Coinbase. Trades are replayed from price history, ignore slippage, and past results do not predict future ones. On the signed-in site, bots sync between your devices. Not financial advice.'));
   drawSetup(); drawList();
-  setInterval(() => { if (!document.hidden && !root.hidden && bots.length) refresh(); }, 300000);
+  setInterval(() => { if (!document.hidden && !root.hidden && S.bots.length) refresh(); }, 300000);
+  on('bots', () => { drawList(); refresh(); });
   return { show() { refresh(); } };
 }

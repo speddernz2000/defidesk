@@ -32,7 +32,17 @@ function mergePaper(local, remote) {
   return { startBalance, cash, positions, ...(resetAt ? { resetAt } : {}) };
 }
 
+// A bot's settings never change; only stopping does, and that is final (the first stop wins).
+function pickBot(_, l, r) {
+  if (l.stoppedAt && r.stoppedAt) return l.stoppedAt < r.stoppedAt ? l : r;
+  return l.stoppedAt ? l : r;
+}
+const mergeBots = (base, local, remote) => mergeList(base, local, remote, (b) => b.id, pickBot).sort((a, b) => b.startedAt - a.startedAt || (a.id < b.id ? -1 : 1));
+// The Mac and web write fields in a different order and the Mac leaves empty ones out: compare what they mean.
+const plain = (list) => JSON.stringify((list || []).map((b) => Object.keys(b).sort().filter((k) => b[k] != null).map((k) => [k, b[k]])));
+
 export const DOCS = {
+  bots: { merge: mergeBots, same: (a, b) => plain(a) === plain(b) },
   wallets: {
     merge: (base, local, remote) => mergeList(base, local, remote, (w) => w.address.toLowerCase(), (b, l, r) => (b && same(b, l) ? r : l)),
     same,

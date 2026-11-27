@@ -13,6 +13,7 @@ export const S = {
   stats: load('cache:stats', {}),                        // poolId -> stats
   paper: load('paper', { startBalance: 10000, cash: 10000, positions: [] }),
   paperErr: null, paperUpdated: null,
+  bots: load('bots', []),                                // paper trading bots (settings only)
 };
 export const TF = { '24H': 1, '7D': 7, '30D': 30, '90D': 90, '1Y': 365, '5Y': 1825 };
 export const btcPrice = () => S.coins.find((c) => c.id === 'bitcoin')?.price ?? null;
