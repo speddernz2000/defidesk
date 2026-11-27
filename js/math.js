@@ -118,3 +118,36 @@ export const aaveTotals = (snap) => {
   const hfs = snap.accounts.map((a) => a.healthFactor).filter((x) => x != null);
   return { supplied, borrowed, net, netAPY: net > 0 ? ((earn - cost) / net) * 100 : null, lowestHF: hfs.length ? Math.min(...hfs) : null };
 };
+
+// ---------- Position tracks (rebalancing) — mirrors PaperModels.swift in the Mac app ----------
+// A rebalance closes one position and opens the next, linked by `previousID`.
+export function trackOf(positions, p) {
+  const legs = [p], seen = new Set([p.id]);
+  for (let q; (q = positions.find((x) => x.id === legs[0].previousID && !seen.has(x.id)));) { legs.unshift(q); seen.add(q.id); }
+  for (let q; (q = positions.find((x) => x.previousID === legs.at(-1).id && !seen.has(x.id)));) { legs.push(q); seen.add(q.id); }
+  const origin = legs[0], latest = legs.at(-1), originalValue = origin.capital, value = derive(latest).totalValue;
+  const hodlAt = (price) => originalValue / 2 + (originalValue / 2) * (price / origin.entryPrice);
+  const hodl = hodlAt(latest.currentPrice), pnl = value - originalValue;
+  return { legs, origin, latest, originalValue, value, pnl, pnlPct: (pnl / originalValue) * 100, hodlAt, hodl, vsHodl: value - hodl,
+    fees: legs.reduce((t, x) => t + x.feesAccrued, 0), costs: legs.reduce((t, x) => t + (x.rebalanceCost || 0), 0), rebalances: legs.length - 1 };
+}
+export const isReplaced = (positions, id) => positions.some((p) => p.previousID === id);
+/** P1, P2, … in the order positions were first opened; kept through rebalances. */
+export function tagOf(positions, id) {
+  const p = positions.find((x) => x.id === id); if (!p) return 'P?';
+  const origin = trackOf(positions, p).origin.id;
+  const firsts = positions.filter((q) => !positions.some((x) => x.id === q.previousID)).sort((a, b) => a.openedAt - b.openedAt || (a.id < b.id ? -1 : 1));
+  const i = firsts.findIndex((x) => x.id === origin);
+  return i < 0 ? 'P?' : `P${i + 1}`;
+}
+/** Closes an open position and re-opens its value, less `cost`, in a new range around the current price. Cash is unchanged. */
+export function rebalance(account, id, lower, upper, cost, now, newId) {
+  const old = account.positions.find((x) => x.id === id);
+  if (!old || old.closedAt) throw new Error('That position is no longer open.');
+  const value = derive(old).totalValue - cost;
+  if (!(cost >= 0 && value > 0)) throw new Error("The cost must be zero or more, and less than the position's value.");
+  Object.assign(old, { closedAt: now, closePrice: old.currentPrice, closeValue: value, rebalanceCost: cost });
+  const { poolKey, network, address, poolName, version, volatileSymbol, currentPrice, poolAPR, sigma } = old;
+  account.positions.push({ id: newId, poolKey, network, address, poolName, version, volatileSymbol, capital: value, entryPrice: currentPrice, lower, upper,
+    openedAt: now, currentPrice, poolAPR, sigma, feesAccrued: 0, lastAccrual: now, closedAt: null, previousID: old.id });
+}

@@ -1,7 +1,7 @@
 // Offline-friendly app shell. Only same-origin files are cached; all live data (prices, pools, AI) always goes to the network.
-const CACHE = 'defi-tracker-v5';
+const CACHE = 'defi-tracker-v6';
 const SHELL = ['./', 'index.html', 'style.css', 'manifest.webmanifest', 'js/util.js', 'js/api.js', 'js/math.js', 'js/charts.js', 'js/state.js', 'js/tokens.js',
-  'js/pools.js', 'js/calc.js', 'js/wallet.js', 'js/paper.js', 'js/ai.js', 'js/main.js', 'js/merge.js', 'js/sync.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+  'js/pools.js', 'js/calc.js', 'js/wallet.js', 'js/paper.js', 'js/range.js', 'js/dialogs.js', 'js/ai.js', 'js/main.js', 'js/merge.js', 'js/sync.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {

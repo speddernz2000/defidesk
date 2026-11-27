@@ -2,7 +2,10 @@
 import { h, usd, pct, cls, ago, on } from './util.js';
 import { S, paperOpen, paperClosed, paperPositionsValue, paperTotal, loadStats, paperPoolAPR, paperSigma, enterPaper, closePaper, resetPaper, refreshPaper } from './state.js';
 import { NETWORKS, topPoolsCached, fetchPools, paperInfo, version, poolAPR24, uniswapPoolUrl } from './api.js';
-import { Position, estimateAPR, derive } from './math.js';
+import { Position, estimateAPR, derive, trackOf, tagOf } from './math.js';
+import { rangeEditor } from './range.js';
+import { openRebalance, openHistory, signed } from './dialogs.js';
+import { ai } from './ai.js';
 import { rangeBar } from './charts.js';
 
 const PRESETS = [
@@ -23,7 +26,8 @@ export function mount(root) {
   const poolMsg = h('div'); const poolStats = h('div', { class: 'row gap wrap' }); const poolLink = h('span');
   const amtIn = h('input', { type: 'number', min: 0, step: 'any', value: amount, class: 'grow', oninput: () => { amount = +amtIn.value || 0; refreshEntry(false); } });
   const quick = [25, 50, 100].map((p) => h('button', { class: 'btn ghost', onclick: () => { amount = Math.floor(S.paper.cash * p) / 100; amtIn.value = amount; refreshEntry(false); } }, p === 100 ? 'MAX' : `${p}%`));
-  const presetBox = h('div', { class: 'presets' }); const customBox = h('div', { class: 'row gap' });
+  const presetBox = h('div', { class: 'presets' });
+  const editor = rangeEditor((l, u) => { lowerPct = l; upperPct = u; preset = 'custom'; refreshEntry(false); });
   const barBox = h('div'); const summaryBox = h('div'); const enterBtn = h('button', { class: 'btn big', onclick: enter }, 'Enter paper position');
   const hint = h('div', { class: 'muted small' }); const msgBox = h('div');
   const entry = h('div', { class: 'card stack', style: { '--glow': 'var(--cyan)' } },
@@ -31,7 +35,7 @@ export function mount(root) {
     h('div', { class: 'row gap' }, netSel, poolSel), poolMsg, poolStats,
     h('div', { class: 'field' }, h('div', { class: 'split small' }, h('span', { class: 'lbl' }, 'Deposit (test USD)'), h('span', { class: 'lbl', id: 'avail' })),
       h('div', { class: 'row gap' }, amtIn, ...quick)),
-    h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Position range'), presetBox, barBox, customBox), summaryBox, enterBtn, hint, msgBox);
+    h('div', { class: 'field' }, h('div', { class: 'lbl small' }, 'Position range'), presetBox, barBox, editor.el), summaryBox, enterBtn, hint, msgBox);
   const positions = h('div', { class: 'stack' });
   root.append(lpTotals, account, h('div', { class: 'two paper' }, entry, positions),
     h('div', { class: 'muted small' }, 'Paper trading uses test money only — nothing here touches a real wallet or pool. Prices and pool APR are live; fees are simulated from the pool’s recent volume ÷ liquidity, ignore gas and slippage, and are not a promise of real returns.'));
@@ -79,20 +83,13 @@ export function mount(root) {
         h('b', {}, r.name), h('span', {}, r.blurb + (e ? ` · ~${e.forecast.toFixed(0)}% APR` : '')));
     }));
     const b = boundsFor(preset);
-    if (p && info) barBox.innerHTML = rangeBar({ lower: b ? info.price * (1 + b.lo / 100) : null, upper: b ? info.price * (1 + b.hi / 100) : null, current: info.price });
-    customBox.replaceChildren(...(preset === 'custom' && info ? [
-      bound('Lower bound', () => lowerPct, (v) => { lowerPct = v; }, info.price, -95, -0.5), bound('Upper bound', () => upperPct, (v) => { upperPct = v; }, info.price, 0.5, 500)] : []));
+    editor.el.hidden = !(p && info && b);
+    if (p && info && b) editor.update(b.lo, b.hi, info.price);
+    barBox.innerHTML = p && info && !b ? rangeBar({ lower: null, upper: null, current: info.price }) : '';
     summaryBox.replaceChildren(p && info ? summary(p, info, b) : '');
     enterBtn.disabled = !p || !(amount > 0) || entering; enterBtn.textContent = entering ? 'Entering…' : 'Enter paper position';
     hint.textContent = !p ? 'Waiting for pool data — choose a network above or press Retry.' : !(amount > 0) ? 'Enter an amount above zero.' : '';
     msgBox.replaceChildren(message ? h('div', { class: message.err ? 'down' : 'up' }, message.text) : '');
-  }
-  function bound(label, get, set, price, min, max) {
-    const inp = h('input', { type: 'number', step: 0.5, value: get(), class: 'center' });
-    const apply = (v) => { set(Math.min(Math.max(v, min), max)); refreshEntry(false); };
-    inp.addEventListener('change', () => apply(+inp.value));
-    return h('div', { class: 'boundbox grow' }, h('div', { class: 'split small' }, h('span', { class: 'lbl' }, label), h('span', { class: 'mono' }, usd(price * (1 + get() / 100)))),
-      h('div', { class: 'row gap' }, h('button', { class: 'btn ghost', onclick: () => apply(get() - 1) }, '−'), inp, h('span', {}, '%'), h('button', { class: 'btn ghost', onclick: () => apply(get() + 1) }, '+')));
   }
   function summary(p, info, b) {
     const lo = b ? info.price * (1 + b.lo / 100) : null, hi = b ? info.price * (1 + b.hi / 100) : null;
@@ -132,7 +129,7 @@ export function mount(root) {
   // Totals across the open paper positions.
   function renderSummary() {
     const rows = paperOpen().map((p) => ({ p, d: derive(p) })), sum = (fn) => rows.reduce((t, r) => t + fn(r), 0);
-    const value = sum((r) => r.d.totalValue), invested = sum((r) => r.p.capital), fees = sum((r) => r.p.feesAccrued), pnl = value - invested;
+    const value = sum((r) => r.d.totalValue), invested = sum((r) => trackOf(S.paper.positions, r.p).originalValue), fees = sum((r) => r.p.feesAccrued), pnl = value - invested;
     const daily = sum((r) => (r.d.totalValue * r.d.est.forecast) / 100 / 365), apr = value > 0 ? (daily * 365 * 100) / value : 0;
     const box = (label, big, note, c = '') => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, label), h('b', { class: c }, big), h('span', { class: 'lbl' }, note));
     lpTotals.replaceChildren(
@@ -151,16 +148,24 @@ export function mount(root) {
         h('span', { class: 'muted small' }, S.paperUpdated ? `prices ${ago(S.paperUpdated)}` : ''))));
   }
   function positionCard(p) {
-    const d = derive(p);
-    const st = (l, v, c = '') => h('div', { class: 'stat' }, h('span', { class: 'lbl' }, l), h('b', { class: c }, v));
-    return h('div', { class: 'subcard' },
-      h('div', { class: 'split wrap' }, h('div', { class: 'row gap wrap' }, h('b', { class: 'big-name' }, p.poolName), h('span', { class: 'muted small' }, `${p.version} · ${netLabel(p.network)}`),
+    const d = derive(p), t = trackOf(S.paper.positions, p), tag = tagOf(S.paper.positions, p.id), on = ai.isShowing(p.id);
+    const st = (l, v, c = '', title) => h('div', { class: 'stat', title }, h('span', { class: 'lbl' }, l), h('b', { class: c }, v));
+    const close = () => { if (confirm(`Close ${tag} · ${p.poolName}? Its value and fees return to test cash. This can't be undone.`)) closePaper(p.id); };
+    return h('div', { class: 'subcard' + (on ? ' focus' : '') },
+      h('div', { class: 'split wrap' }, h('div', { class: 'row gap wrap' }, h('span', { class: 'ptag' + (on ? ' on' : '') }, tag), h('b', { class: 'big-name' }, p.poolName), h('span', { class: 'muted small' }, `${p.version} · ${netLabel(p.network)}`),
         h('span', { class: 'badge ' + (d.inRange ? 'up' : 'down') }, d.inRange ? 'IN RANGE' : 'OUT OF RANGE')),
-        h('div', { class: 'row gap' }, h('span', { class: 'muted small' }, `opened ${ago(p.openedAt)}`), realLink(p.network, p.address, 'Enter for real ↗'), h('button', { class: 'btn danger', onclick: () => closePaper(p.id) }, 'Close'))),
+        h('span', { class: 'muted small' }, `opened ${ago(t.origin.openedAt)}`)),
       h('div', { html: rangeBar({ lower: p.lower, upper: p.upper, current: p.currentPrice, entry: p.entryPrice }) }),
-      h('div', { class: 'row gap wrap' }, st('Value now', usd(d.totalValue)), st('Profit / loss', `${d.pnl >= 0 ? '+' : '-'}${usd(Math.abs(d.pnl))} (${pct(d.pnl / p.capital * 100)})`, cls(d.pnl)),
-        st('Fees earned*', usd(p.feesAccrued), 'up'), st('Impermanent loss', pct(d.il * 100), cls(d.il)), st('Est. APR (forecast)', `${d.est.forecast.toFixed(0)}%`)),
-      h('div', { class: 'muted small' }, `${p.volatileSymbol} entered at ${usd(p.entryPrice)} · now ${usd(p.currentPrice)} · range ${p.lower == null ? '0' : usd(p.lower)} – ${p.upper == null ? '∞' : usd(p.upper)} · invested ${usd(p.capital)} · *simulated`));
+      h('div', { class: 'row gap wrap' }, st('Original deposit', usd(t.originalValue)), st('Value now', usd(t.value)),
+        st('Profit / loss', `${signed(t.pnl)} (${pct(t.pnlPct)})`, cls(t.pnl)),
+        st('HODL value', usd(t.hodl), '', `What your original deposit would be worth now if held as 50% ${p.volatileSymbol} and 50% USD`),
+        st('vs HODL', signed(t.vsHodl), cls(t.vsHodl))),
+      h('div', { class: 'row gap wrap' }, st('Fees earned*', usd(t.fees), 'up'), st('Impermanent loss (this range)', pct(d.il * 100), cls(d.il)), st('Est. APR (forecast)', `${d.est.forecast.toFixed(0)}%`)),
+      h('div', { class: 'muted small' }, `${p.volatileSymbol} range ${p.lower == null ? '0' : usd(p.lower)} – ${p.upper == null ? '∞' : usd(p.upper)} from ${usd(p.entryPrice)} · now ${usd(p.currentPrice)}${t.rebalances ? ` · rebalanced ${t.rebalances}×, costs ${usd(t.costs)}` : ''} · *simulated`),
+      h('div', { class: 'split wrap actions' },
+        h('div', { class: 'row gap wrap' }, h('button', { class: 'pill', onclick: () => ai.open(p.id), title: `Ask the AI about ${tag} only` }, '✦ AI'),
+          h('button', { class: 'pill filled', onclick: () => openRebalance(p.id) }, '⇆ Rebalance'), h('button', { class: 'pill', onclick: () => openHistory(p.id) }, '↺ History')),
+        h('div', { class: 'row gap wrap' }, realLink(p.network, p.address, 'Enter for real ↗'), h('button', { class: 'pill danger', onclick: close }, '✕ Close'))));
   }
   function renderPositions() {
     const open = paperOpen(), closed = paperClosed();
@@ -168,12 +173,15 @@ export function mount(root) {
       h('div', { class: 'card', style: { '--glow': 'var(--up)' } }, h('div', { class: 'eyebrow', style: { color: 'var(--up)' } }, `OPEN POSITIONS (${open.length})`),
         open.length ? h('div', { class: 'stack' }, open.map(positionCard)) : h('div', { class: 'center pad muted' }, 'No paper positions yet — pick a pool and a range, then enter with test money.')),
       closed.length ? h('div', { class: 'card', style: { '--glow': '#777' } },
-        h('button', { class: 'linkbtn', onclick: () => { showClosed = !showClosed; renderPositions(); } }, `${showClosed ? '▾' : '▸'} CLOSED (${closed.length}) · realised ${usd(closed.reduce((t, p) => t + (p.closeValue - p.capital), 0))}`),
-        showClosed ? h('div', { class: 'stack' }, closed.map((p) => h('div', { class: 'split small' }, h('span', {}, h('b', {}, `${p.poolName} · ${p.version}`), ` ${ago(p.closedAt)}`),
-          h('span', { class: 'mono' }, `${usd(p.capital)} → ${usd(p.closeValue)} `, h('b', { class: cls(p.closeValue - p.capital) }, (p.closeValue - p.capital).toFixed(2)))))) : null) : null);
+        h('button', { class: 'linkbtn', onclick: () => { showClosed = !showClosed; renderPositions(); } }, `${showClosed ? '▾' : '▸'} CLOSED (${closed.length}) · realised ${usd(closed.reduce((t, p) => t + trackOf(S.paper.positions, p).pnl, 0))}`),
+        showClosed ? h('div', { class: 'stack' }, closed.map((p) => {
+          const t = trackOf(S.paper.positions, p);
+          return h('div', { class: 'split wrap small' }, h('span', {}, h('span', { class: 'ptag' }, tagOf(S.paper.positions, p.id)), ' ', h('b', {}, `${p.poolName} · ${p.version}`), ` ${ago(p.closedAt)}`),
+            h('span', { class: 'row gap mono' }, `${usd(t.originalValue)} → ${usd(t.value)}`, h('b', { class: cls(t.pnl) }, t.pnl.toFixed(2)), h('button', { class: 'pill', onclick: () => openHistory(p.id) }, 'History')));
+        })) : null) : null);
   }
   const renderAll = () => { renderSummary(); renderAccount(); renderPositions(); refreshEntry(false); };
-  on('paper', renderAll); on('stats', () => { renderSummary(); refreshEntry(false); });
+  on('paper', renderAll); on('aifocus', renderPositions); on('stats', () => { renderSummary(); refreshEntry(false); });
   renderAll();
   return { show() { renderAll(); if (!pools.length && !loading) loadPools(); refreshPaper(); } };
 }

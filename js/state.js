@@ -1,7 +1,7 @@
 // Shared app state + the actions that load/modify it. Everything personal lives in this browser's localStorage.
 import { load, save, sleep, emit } from './util.js';
 import * as api from './api.js';
-import { derive, DEFAULT_SIGMA } from './math.js';
+import { derive, rebalance, isReplaced, DEFAULT_SIGMA } from './math.js';
 
 const cachedCoins = load('cache:coins', null);          // last good prices, so something shows even when the data source is limited
 export const S = {
@@ -94,7 +94,7 @@ export async function refreshWallet() {
 // ---------- paper trading ----------
 const persistPaper = () => save('paper', S.paper);
 export const paperOpen = () => S.paper.positions.filter((p) => !p.closedAt).sort((a, b) => b.openedAt - a.openedAt);
-export const paperClosed = () => S.paper.positions.filter((p) => p.closedAt).sort((a, b) => b.closedAt - a.closedAt);
+export const paperClosed = () => S.paper.positions.filter((p) => p.closedAt && !isReplaced(S.paper.positions, p.id)).sort((a, b) => b.closedAt - a.closedAt);
 export const paperPositionsValue = () => paperOpen().reduce((t, p) => t + derive(p).totalValue, 0);
 export const paperTotal = () => S.paper.cash + paperPositionsValue();
 
@@ -138,6 +138,12 @@ export function closePaper(id) {
   p.closedAt = now; p.closePrice = p.currentPrice; p.closeValue = v; S.paper.cash += v;
   persistPaper(); emit('paper');
 }
+export function rebalancePaper(id, lower, upper, cost) {
+  const p = S.paper.positions.find((x) => x.id === id), now = Date.now();
+  if (p && !p.closedAt) accrue(p, now);
+  rebalance(S.paper, id, lower, upper, cost, now, crypto.randomUUID());
+  persistPaper(); emit('paper');
+}
 export function resetPaper() { S.paper = { startBalance: 10000, cash: 10000, positions: [], resetAt: Date.now() }; persistPaper(); emit('paper'); }
 
 /** Refresh live prices for open positions and accrue simulated fees. */
@@ -152,7 +158,7 @@ export async function refreshPaper() {
           const info = api.paperInfo(pool); if (!info) continue;
           await loadStats(pool);
           for (const p of open) {
-            if (p.network !== net || p.address.toLowerCase() !== pool.address.toLowerCase()) continue;
+            if (p.closedAt || p.network !== net || p.address.toLowerCase() !== pool.address.toLowerCase()) continue;
             accrue(p, Date.now());                         // accrue on the old price state, then move to the new price
             p.currentPrice = info.price; p.poolAPR = paperPoolAPR(pool) ?? p.poolAPR; p.sigma = paperSigma(pool);
           }

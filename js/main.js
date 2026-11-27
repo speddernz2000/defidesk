@@ -1,5 +1,5 @@
 // App shell: tabs, refresh timers, AI panel, service worker.
-import { $, h, load, save } from './util.js';
+import { $, h, load, save, on } from './util.js';
 import { S, refreshCoins, loadHistory, refreshWallet, refreshWatched, refreshPaper } from './state.js';
 import * as tokens from './tokens.js';
 import * as pools from './pools.js';
@@ -30,8 +30,9 @@ function show(id) {
 }
 
 const panel = ai.mount($('#ai'));
-$('#ai-btn').addEventListener('click', () => { panel.toggle(); $('#ai-btn').classList.toggle('on', panel.isOpen()); });
-addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); panel.toggle(); $('#ai-btn').classList.toggle('on', panel.isOpen()); } });
+on('aifocus', () => $('#ai-btn').classList.toggle('on', panel.isOpen()));
+$('#ai-btn').addEventListener('click', () => panel.toggle());
+addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); panel.toggle(); } });
 
 async function refreshAll() { await refreshCoins(); loadHistory(true); refreshWatched(); refreshWallet(); refreshPaper(); }
 $('#refresh').addEventListener('click', refreshAll);
